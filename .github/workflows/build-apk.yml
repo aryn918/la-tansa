@@ -1,0 +1,65 @@
+name: Build La Tansa APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Extract Android project
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/la-tansa"
+          FOUND=""
+          for archive in "$GITHUB_WORKSPACE"/*.zip; do
+            [ -f "$archive" ] || continue
+            if unzip -Z1 "$archive" | grep -qE '(^|/)settings\.gradle$'; then
+              FOUND="$archive"
+              break
+            fi
+          done
+          if [ -z "$FOUND" ]; then
+            echo "Android project ZIP not found"
+            exit 1
+          fi
+          unzip -q "$FOUND" -d "$RUNNER_TEMP/la-tansa"
+          SETTINGS=$(find "$RUNNER_TEMP/la-tansa" -name settings.gradle -print -quit)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle not found"
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$SETTINGS")" >> "$GITHUB_ENV"
+
+      - name: Build APK
+        run: gradle -p "$PROJECT_DIR" assembleDebug
+
+      - name: Prepare APK
+        run: |
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" "$GITHUB_WORKSPACE/la-tansa.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: la-tansa-apk
+          path: la-tansa.apk
